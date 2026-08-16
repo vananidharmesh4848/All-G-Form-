@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="gu">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>મલ્ટી-ફોર્મ સેન્ટ્રલ ડેશબોર્ડ | Multi-Form Central Dashboard</title>
+  <link rel="stylesheet" href="assets/style.css">
+  
+  <!-- SheetJS Library for Excel operations -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- Chart.js for interactive reports -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+  <div class="app-container">
+    
+    <!-- Top Brand Header -->
+    <header class="no-print">
+      <div class="brand">
+        <div class="logo-icon">📊</div>
+        <div class="brand-text">
+          <h1>મલ્ટી-ફોર્મ સેન્ટ્રલ ડેશબોર્ડ</h1>
+          <p>Multi-Form Central Dashboard (Google Sheets Sync)</p>
+        </div>
+      </div>
+      <div class="controls">
+        <button id="viewToggleBtn" class="btn btn-secondary btn-sm" onclick="toggleViewMode()" style="font-size:0.8rem; font-weight:600; padding:6px 12px;">💻 PC View</button>
+        <button id="themeToggleBtn" class="btn btn-secondary btn-icon" onclick="toggleTheme()" title="થીમ બદલો (Theme)">🌗</button>
+      </div>
+    </header>
+
+    <!-- Quick Stats Summary (Compact Design) -->
+    <section class="no-print" style="margin-bottom: 16px; width: 100%;">
+      <div class="card" style="padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 1.3rem; line-height: 1;">📋</span>
+          <div>
+            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">કુલ ફોર્મ્સ / Total Forms</span>
+            <div style="display: flex; align-items: baseline; gap: 10px; margin-top: 2px;">
+              <span id="statTotalForms" style="font-size: 1.5rem; font-weight: 800; color: var(--text-main); line-height: 1;">0</span>
+              <span id="statFormsDetail" style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted);">
+                (🟢 0 active | 🔴 0 inactive | 🔗 0 unlinked)
+              </span>
+            </div>
+          </div>
+        </div>
+        
+        <div style="display: flex; align-items: center; gap: 20px; border-left: 1px solid var(--border-color); padding-left: 20px;">
+          <div>
+            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">૨૪ કલાકની એન્ટ્રીઓ (24h)</span>
+            <div id="statTotal24h" style="font-size: 1.2rem; font-weight: 800; color: var(--text-main); margin-top: 2px;">0</div>
+          </div>
+          <div>
+            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">કુલ એન્ટ્રીઓ (Total)</span>
+            <div id="statTotalSubmissions" style="font-size: 1.2rem; font-weight: 800; color: var(--text-main); margin-top: 2px;">0</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tabs Navigation Bar -->
+    <nav class="tabs-nav no-print" aria-label="Main Navigation">
+      <button class="tab-link active" data-tab="dash" onclick="switchTab('dash')" id="tabLinkDash">
+        📊 માસ્ટર ડેશબોર્ડ (Master Dashboard)
+      </button>
+      <button class="tab-link" data-tab="details" onclick="switchTab('details')" id="tabLinkDetails">
+        🔍 ફોર્મ વાઇઝ એન્ટ્રીઓ (Form Submissions)
+      </button>
+      <button class="tab-link" data-tab="linker" onclick="switchTab('linker')" id="tabLinkLinker">
+        🔗 ફોર્મ લિંક કરો (Connect Sheets)
+      </button>
+      <button class="tab-link" data-tab="analytics" onclick="switchTab('analytics')" id="tabLinkAnalytics">
+        📈 વિશ્લેષણ ગ્રાફ્સ (Analytics Charts)
+      </button>
+    </nav>
+
+    <!-- Main Screens Content Container -->
+    <main class="dashboard-content">
+      
+      <!-- Screen 1: Master Dashboard Grid Table -->
+      <div class="tab-panel active" id="tab-dash">
+        <div class="card">
+          <div class="card-title-bar">
+            <h2>📊 બધા ફોર્મ્સનો લાઈવ ટ્રેકિંગ હિસાબ (Master Dashboard)</h2>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-accent btn-sm" id="syncAllBtn" onclick="syncAllGoogleSheets()" style="display: none;">
+                🔄 લાઈવ અપડેટ કરો / Sync Sheets
+              </button>
+              <button class="btn btn-secondary btn-sm no-print" onclick="window.print()">🖨️ પ્રિન્ટ (Print)</button>
+            </div>
+          </div>
+
+          <!-- Empty State Prompt -->
+          <div id="dashboardEmptyState" class="empty-state" style="text-align: center; padding: 40px 20px;">
+            <span style="font-size: 3rem;">🔗</span>
+            <h3 style="margin-top: 15px; font-size: 1.2rem;">હજુ સુધી કોઈ ગૂગલ શીટ લિંક કરેલ નથી</h3>
+            <p class="text-muted" style="font-size: 0.9rem; margin-top: 8px; max-width: 500px; margin-left: auto; margin-right: auto;">
+              તમારા ગૂગલ ફોર્મ્સ જોડાયેલા હોય તે ગૂગલ પત્રકોને લિંક કરવા માટે <strong>"🔗 ફોર્મ લિંક કરો (Connect Sheets)"</strong> ટેબ પર જાઓ.
+            </p>
+            <button class="btn btn-sm" onclick="switchTab('linker')" style="margin-top: 15px;">નવી લિંક જોડો / Link Sheet</button>
+          </div>
+
+          <!-- Data Table -->
+          <div class="table-responsive" id="dashboardTableContainer" style="display: none;">
+            <table id="dashboardTable">
+              <thead>
+                <tr>
+                  <th>ફોર્મ / પ્રોજેક્ટ નામ (Form Title)</th>
+                  <th>છેલ્લી એન્ટ્રીનો સમય (Last Submission)</th>
+                  <th>છેલ્લાં ૨૪ કલાકની એન્ટ્રીઝ (Entries 24h)</th>
+                  <th>છેલ્લી વ્યક્તિનું નામ/ઈમેલ (Last Submitter)</th>
+                  <th>સ્થિતિ (Status)</th>
+                  <th class="no-print" style="text-align: center;">ઍક્શન (Action)</th>
+                </tr>
+              </thead>
+              <tbody id="dashboardTableBody">
+                <!-- Injected dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screen 2: Form Submissions details -->
+      <div class="tab-panel" id="tab-details">
+        <div class="card">
+          <div class="card-title-bar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <h2>🔍 ફોર્મ વાઇઝ એન્ટ્રી લોગ (Form Submission History)</h2>
+            <button class="btn btn-danger btn-sm no-print" onclick="forceClearCache()" style="padding: 6px 12px; font-size: 0.75rem; font-weight: 600;">
+              🧹 કેશ ક્લિયર કરો / Reset Cache
+            </button>
+          </div>
+          <p class="text-muted">કોઈપણ ફોર્મ પસંદ કરી તેમાં થયેલી બધી જ સબમિશન એન્ટ્રીઓ જોઈ શકો છો.</p>
+          
+          <div class="form-grid mt no-print" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="detailsFormSelect">ફોર્મ પસંદ કરો (Select Form)</label>
+              <select id="detailsFormSelect" onchange="renderFormDetailsPanel()" style="width: 100%;">
+                <!-- Dynamic options -->
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>ઝડપી સમયગાળો (Timeframe)</label>
+              <div class="timeframe-buttons" style="display: flex; gap: 4px; background-color: var(--bg-main); padding: 4px; border-radius: 6px; border: 1px solid var(--border-color); height: 38px; align-items: center;">
+                <button class="btn btn-secondary btn-sm tf-btn" id="tf-24h" onclick="changeSummaryTimeframe('24h')" style="font-size: 0.7rem; padding: 4px 4px; flex-grow: 1; border: none; height: 100%; border-radius:4px; font-weight:600;">૨૪ કલાક</button>
+                <button class="btn btn-secondary btn-sm tf-btn" id="tf-last_week" onclick="changeSummaryTimeframe('last_week')" style="font-size: 0.7rem; padding: 4px 4px; flex-grow: 1; border: none; height: 100%; border-radius:4px; font-weight:600;">૭ દિવસ</button>
+                <button class="btn btn-secondary btn-sm tf-btn" id="tf-current_month" onclick="changeSummaryTimeframe('current_month')" style="font-size: 0.7rem; padding: 4px 4px; flex-grow: 1; border: none; height: 100%; border-radius:4px; font-weight:600;">મહિનો</button>
+                <button class="btn btn-secondary btn-sm tf-btn" id="tf-all_time" onclick="changeSummaryTimeframe('all_time')" style="font-size: 0.7rem; padding: 4px 4px; flex-grow: 1; border: none; height: 100%; border-radius:4px; font-weight:600;">સંપૂર્ણ</button>
+              </div>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="dateFrom">તારીખથી (From Date)</label>
+              <input type="date" id="dateFrom" onchange="renderFormDetailsPanel()" style="width: 100%;">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="dateTo">તારીખ સુધી (To Date)</label>
+              <input type="date" id="dateTo" onchange="renderFormDetailsPanel()" style="width: 100%;">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="detailsSearchInput">શોધ વિગત (Search Text)</label>
+              <div style="display: flex; gap: 8px;">
+                <input type="text" id="detailsSearchInput" placeholder="શોધવું..." style="flex-grow: 1;">
+                <button class="btn btn-secondary" onclick="resetDateFilter()" style="padding: 0 12px; font-size: 0.75rem;">Reset</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Custom Audit Summary Panel (Only shown for Cleaning Checklist Form) -->
+          <div id="customAuditSummaryPanel" style="display: none; margin-top: 24px; margin-bottom: 24px;"></div>
+
+          <div class="table-responsive mt" style="margin-top: 20px;">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 80px;">ક્રમ (No)</th>
+                  <th>તારીખ અને સમય (Timestamp)</th>
+                  <th>ઓપરેટર આઈડેન્ટિટી (Email / Submitter)</th>
+                </tr>
+              </thead>
+              <tbody id="detailsTableBody">
+                <!-- Dynamic rows -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- Screen 4: Google Sheets URL Registry (Connect Sheets) -->
+      <div class="tab-panel" id="tab-linker">
+        <div class="dashboard-content has-split">
+          
+          <!-- Left: Connect Sheet Form -->
+          <div class="card">
+            <h2>🔗 નવી ગૂગલ શીટ લિંક કનેક્ટ કરો (Connect Google Sheet)</h2>
+            <p class="text-muted" style="font-size: 0.8rem; margin-bottom: 20px;">
+              ગૂગલ ફોર્મના જવાબો જે ગૂગલ શીટમાં એક્સપોર્ટ થાય છે તે શીટની લિંક અને નામ અહીં સેવ કરો.
+            </p>
+
+            <form id="linkerForm" onsubmit="bindGoogleSheet(event)">
+              <div class="form-group" style="margin-bottom: 16px;">
+                <label for="linkName">૧. ફોર્મ અથવા પ્રોજેક્ટનું કસ્ટમ નામ (Form/Project Title)</label>
+                <input type="text" id="linkName" placeholder="દા.ત. Daily Machine Inspection, Safety Audit..." required>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 16px;">
+                <label for="linkFormUrl">૨. ગૂગલ ફોર્મ (Google Form) ની લિંક [વૈકલ્પિક]</label>
+                <input type="url" id="linkFormUrl" placeholder="https://docs.google.com/forms/d/e/.../viewform">
+              </div>
+
+              <div class="form-group" style="margin-bottom: 20px;">
+                <label for="linkSheetUrl">૩. ગૂગલ શીટ (Google Sheet) ની લિંક</label>
+                <input type="url" id="linkSheetUrl" placeholder="https://docs.google.com/spreadsheets/d/.../edit?usp=sharing" required>
+                <span class="muted" style="font-size: 0.75rem; margin-top: 4px; display: block; color: var(--text-muted);">
+                  નોંધ: ગૂગલ શીટના શેરિંગ સેટિંગ્સમાં જઈને <strong>"Anyone with the link can view"</strong> સેટિંગ ચાલુ રાખવું જરૂરી છે.
+                </span>
+              </div>
+
+              <button type="submit" class="btn" style="width: 100%;">🔗 સેવ કરો અને કનેક્ટ કરો / Link Sheet</button>
+            </form>
+          </div>
+
+          <!-- Right: Active Connections List -->
+          <div style="display: flex; flex-direction: column; gap: 20px;">
+            <div class="card">
+              <h2>📋 હાલમાં કનેક્ટ થયેલા લાઈવ ફોર્મ્સ (Active Connections)</h2>
+              <div class="table-responsive" style="margin-top: 12px;">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ફોર્મ / પ્રોજેક્ટ નામ</th>
+                      <th>ફોર્મ લિંક</th>
+                      <th>શીટ લિંક</th>
+                      <th>સ્થિતિ (Sync Status)</th>
+                      <th style="text-align: center;">ઍક્શન</th>
+                    </tr>
+                  </thead>
+                  <tbody id="activeConnectionsTableBody">
+                    <!-- Populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Steps Instruction -->
+            <div class="card" style="background-color: var(--primary-light); border-left: 4px solid var(--primary);">
+              <h3 style="font-size: 1rem; color: var(--primary); margin-bottom: 12px; font-weight: 700;">⚙️ ગૂગલ શીટ લિંક મેળવવાની સરળ રીત</h3>
+              <ol style="padding-left: 20px; font-size: 0.85rem; line-height: 1.6; color: var(--text-main);">
+                <li>તમારા ગૂગલ ફોર્મના સેટિંગમાં <strong>Responses</strong> ટૅબમાં જઈને ફોર્મને ગૂગલ શીટ સાથે લિંક કરો.</li>
+                <li>એ ગૂગલ શીટમાં જઈ જમણી બાજુ ઉપર **Share** બટન પર ક્લિક કરો.</li>
+                <li>ત્યાં જઈને **"Anyone with the link can view"** ઓપ્શન પસંદ કરો.</li>
+                <li>એ ગૂગલ શીટની લિંક કોપી કરી ડાબી બાજુએ ફોર્મ નામ સાથે પેસ્ટ કરી સેવ કરો!</li>
+              </ol>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Screen 5: Charts & Share Analytics -->
+      <div class="tab-panel" id="tab-analytics">
+        <div class="card no-print" style="margin-bottom: 20px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:15px;">
+            <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 250px; max-width: 400px;">
+              <label for="analyticsFormSelect" style="font-weight: 600;">ગ્રાફિકલ વિશ્લેષણ માટે ફોર્મ પસંદ કરો (Select Form for Analysis)</label>
+              <select id="analyticsFormSelect" onchange="updateAnalyticsCharts()" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-main);">
+                <!-- Dynamic options -->
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label style="font-weight: 600; display:block; margin-bottom: 6px;">ગ્રાફ માટે સમયગાળો (Chart Timeframe)</label>
+              <div class="timeframe-buttons" style="display:flex; gap:6px; background-color:var(--card-bg); padding:4px; border-radius:6px; border:1px solid var(--border-color);">
+                <button class="btn btn-secondary btn-sm" id="btnChart24h" style="font-size:0.75rem; padding:6px 12px; border:none;" onclick="changeAnalyticsTimeframe('24h')">૨૪ કલાક (24h)</button>
+                <button class="btn btn-secondary btn-sm" id="btnChartWeek" style="font-size:0.75rem; padding:6px 12px; border:none;" onclick="changeAnalyticsTimeframe('last_week')">છેલ્લા ૭ દિવસ (Week)</button>
+                <button class="btn btn-secondary btn-sm" id="btnChartMonth" style="font-size:0.75rem; padding:6px 12px; border:none;" onclick="changeAnalyticsTimeframe('current_month')">ચાલુ મહિનો (Month)</button>
+                <button class="btn btn-secondary btn-sm" id="btnChartAllTime" style="font-size:0.75rem; padding:6px 12px; border:none;" onclick="changeAnalyticsTimeframe('all_time')">સંપૂર્ણ (All Time)</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <h2 id="chart1Title" style="font-size: 1.1rem; font-weight: 700; color: var(--text-main); margin-bottom: 15px;">📊 વિશ્લેષણ ચાર્ટ ૧</h2>
+            <div class="chart-container" style="position: relative; height:320px; width:100%;">
+              <canvas id="analyticsVolumeChart"></canvas>
+            </div>
+          </div>
+          <div class="card">
+            <h2 id="chart2Title" style="font-size: 1.1rem; font-weight: 700; color: var(--text-main); margin-bottom: 15px;">📊 વિશ્લેષણ ચાર્ટ ૨</h2>
+            <div class="chart-container" style="position: relative; height:320px; width:100%;">
+              <canvas id="analyticsShareChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- Toast Notifications UI -->
+  <div id="toastContainer" class="toast-container no-print"></div>
+
+  <!-- Modal Dialog Container -->
+  <div id="customModal" class="modal no-print" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); align-items: center; justify-content: center;">
+    <div class="card" style="background-color: var(--card-bg, #ffffff) !important; color: var(--text-main, #1e293b) !important; margin: auto; padding: 24px; border: 1px solid var(--border-color); width: 90%; max-width: 550px; border-radius: 12px; position: relative; box-shadow: 0 20px 25px rgba(0,0,0,0.25);">
+      <span onclick="closeCustomModal()" style="position: absolute; right: 16px; top: 12px; font-size: 1.5rem; font-weight: bold; cursor: pointer; color: var(--text-muted);">&times;</span>
+      <div id="modalContent"></div>
+    </div>
+  </div>
+
+  <!-- Main JavaScript File -->
+  <script src="assets/app.js"></script>
+</body>
+</html>
