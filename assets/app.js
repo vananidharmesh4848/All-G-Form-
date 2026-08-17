@@ -830,206 +830,62 @@ function renderFormDetailsPanel() {
     detailsTableContainer.parentNode.insertBefore(detailsCardFeed, detailsTableContainer.nextSibling);
   }
 
-  if (isActivePartSheet) {
-    if (detailsTableContainer) detailsTableContainer.style.display = 'none';
-    if (detailsCardFeed) detailsCardFeed.style.display = 'block';
+  if (detailsTableContainer) detailsTableContainer.style.display = 'block';
+  if (detailsCardFeed) detailsCardFeed.style.display = 'none';
 
-    // Find Name column index
-    let nameColIdx = 1;
-    headers.forEach((h, idx) => {
-      if (h.toLowerCase().includes('name') || h.includes('નામ')) {
-        nameColIdx = idx;
-      }
-    });
+  // If no custom date filter is active, only show the last 5 entries in the list
+  const displayLimit = isCustomFilterActive ? filtered.length : 5;
+  const displayRows = filtered.slice(0, displayLimit);
 
-    // Group the filtered rows by Checker Name
-    const checkersData = {};
-    filtered.forEach(row => {
-      const checker = String(row[nameColIdx] || 'System / ડેટા એન્ટ્રી').trim();
-      if (!checkersData[checker]) {
-        checkersData[checker] = [];
-      }
-      checkersData[checker].push(row);
-    });
-
-    // Get the last 5 unique active responders chronologically
-    const activeCheckers = Object.keys(checkersData).slice(0, 5);
-
-    // Get all possible unique machine names present in the headers to trace missed ones
-    const allPossibleMachines = new Set();
-    headers.forEach(h => {
-      if (h.includes('મશીન')) {
-        const mMatch = h.match(/મશીન\s*\d+/);
-        if (mMatch) allPossibleMachines.add(mMatch[0]);
-      }
-    });
-
-    function getRowCheckedMachines(row) {
-      const checked = new Set();
-      headers.forEach((h, idx) => {
-        if (idx > 1 && h.includes('મશીન')) {
-          const val = String(row[idx] || '').trim();
-          if (val !== '') {
-            const mMatch = h.match(/મશીન\s*\d+/);
-            if (mMatch) checked.add(mMatch[0]);
-          }
-        }
-      });
-      return checked;
-    }
-
-    const cardsHtml = activeCheckers.map((checkerName, idx) => {
-      const checkerRows = checkersData[checkerName];
-      const totalSubmissions = checkerRows.length;
+  displayRows.forEach((row, idx) => {
+    const tr = document.createElement('tr');
+    
+    let cellsHtml = '';
+    row.forEach((cell, cIdx) => {
+      const headerLabel = headers[cIdx] || 'Data';
       
-      // Calculate machine tally: Count a machine once per response row if it has any checks
-      const machineTally = {};
-      checkerRows.forEach(row => {
-        const checkedInRow = getRowCheckedMachines(row);
-        checkedInRow.forEach(m => {
-          machineTally[m] = (machineTally[m] || 0) + 1;
-        });
-      });
-
-      // Calculate missed machines in their last (most recent) entry
-      const latestRow = checkerRows[0];
-      const latestChecked = getRowCheckedMachines(latestRow);
-      const missedMachines = [];
-      allPossibleMachines.forEach(m => {
-        if (!latestChecked.has(m)) {
-          missedMachines.push(m);
-        }
-      });
-
-      // Sort missed machines numerically
-      missedMachines.sort((a, b) => {
-        const numA = parseInt(a.replace(/\D/g, '')) || 0;
-        const numB = parseInt(b.replace(/\D/g, '')) || 0;
-        return numA - numB;
-      });
-
-      // Calculate total machine checks countered
-      let totalMachinesCountered = 0;
-      Object.values(machineTally).forEach(c => totalMachinesCountered += c);
-
-      // Sort tally numerically for displaying in the badge list
-      const sortedTally = Object.entries(machineTally).sort((a, b) => {
-        const numA = parseInt(a[0].replace(/\D/g, '')) || 0;
-        const numB = parseInt(b[0].replace(/\D/g, '')) || 0;
-        return numA - numB;
-      });
-
-      const tallyBadges = sortedTally.map(([m, count]) => {
-        return `<span style="background:var(--bg-main); color:var(--text-main); border:1px solid var(--border-color); padding:4px 8px; border-radius:6px; font-size:0.75rem; font-weight:700; display:inline-block;">${m}: <strong style="color:var(--primary);">${count} વાર</strong></span>`;
-      }).join(' ');
-
-      const latestTime = latestRow[0];
-      const latestDateObj = parseDateCell(latestTime);
-      const timeStr = latestDateObj ? `${formatDateTime(latestDateObj)} (${getRelativeTimeString(latestDateObj)})` : latestTime;
-
-      const missedHtml = missedMachines.length > 0
-        ? `<div style="background:rgba(239, 68, 68, 0.04); color:#ef4444; border:1px solid rgba(239, 68, 68, 0.15); padding:10px 14px; border-radius:8px; font-size:0.8rem; margin-top:12px;">
-            <strong>⚠️ છેલ્લી એન્ટ્રીમાં ચેક કરવાના બાકી રહી ગયેલા મશીનો (${missedMachines.length}):</strong>
-            <div style="margin-top:8px; font-weight:600; display:flex; flex-wrap:wrap; gap:6px;">
-              ${missedMachines.map(m => `<span style="background:rgba(239, 68, 68, 0.08); padding:3px 8px; border-radius:6px; font-size:0.75rem;">${m}</span>`).join('')}
-            </div>
-           </div>`
-        : `<div style="background:rgba(13, 148, 136, 0.05); color:#0d9488; border:1px solid rgba(13, 148, 136, 0.15); padding:10px 14px; border-radius:8px; font-size:0.8rem; margin-top:12px; font-weight:700; display:flex; align-items:center; gap:6px;">
-            🟢 છેલ્લી એન્ટ્રીમાં બધા જ મશીનો ચેક કર્યા છે (All machines checked - No missed ones)
-           </div>`;
-
-      return `
-        <div class="card" style="border-left: 6px solid var(--primary); padding:18px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.04); background:var(--card-bg); margin-bottom:12px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; border-bottom:1px solid var(--border-color); padding-bottom:10px; margin-bottom:14px; gap:8px;">
-            <div>
-              <span style="font-size:0.8rem; color:var(--text-muted);">ક્રમ (No): <strong style="color:var(--primary); font-size:0.9rem;">${idx + 1}</strong></span>
-              <span style="margin-left:16px; font-size:1.05rem; font-weight:800; color:var(--text-main);">👤 ચેકર: ${checkerName}</span>
-              <span class="badge badge-success" style="margin-left:12px; font-size:0.75rem; padding:4px 8px;">કુલ સબમિશન: ${totalSubmissions}</span>
-            </div>
-            <div style="font-size:0.8rem; color:var(--text-muted); font-weight:600;">
-              છેલ્લી એન્ટ્રી: 🕒 ${timeStr}
-            </div>
-          </div>
-          
-          <div style="margin-bottom:12px;">
-            <strong style="font-size:0.85rem; color:var(--text-main); display:block; margin-bottom:8px;">
-              📊 મશીન વાઇઝ ચેકિંગ ટૅલી (inspected count per machine - total countered: <span style="color:var(--primary);">${totalMachinesCountered}</span>):
-            </strong>
-            <div style="display:flex; flex-wrap:wrap; gap:8px;">
-              ${tallyBadges || '<span class="text-muted">કોઈ મશીન ચેક કરેલ નથી</span>'}
-            </div>
-          </div>
-
-          ${missedHtml}
-        </div>
-      `;
-    }).join('');
-
-    detailsCardFeed.innerHTML = `
-      <h3 class="mt" style="font-size: 1.15rem; margin-bottom: 16px; font-weight:700; color:var(--text-main); display:flex; align-items:center; gap:8px;">
-        📋 છેલ્લા ૨૪ કલાકનું સમરી પત્રક (Last 24 Hour Summary Response)
-      </h3>
-      <div style="display:flex; flex-direction:column; gap:16px;">
-        ${cardsHtml || '<p class="text-muted" style="text-align:center;">કોઈ એક્ટિવ ચેકર ડેટા ઉપલબ્ધ નથી</p>'}
-      </div>
-    `;
-  } else {
-    if (detailsTableContainer) detailsTableContainer.style.display = 'block';
-    if (detailsCardFeed) detailsCardFeed.style.display = 'none';
-
-    // If no custom date filter is active, only show the last 5 entries in the list
-    const displayLimit = isCustomFilterActive ? filtered.length : 5;
-    const displayRows = filtered.slice(0, displayLimit);
-
-    displayRows.forEach((row, idx) => {
-      const tr = document.createElement('tr');
-      
-      let cellsHtml = '';
-      row.forEach((cell, cIdx) => {
-        const headerLabel = headers[cIdx] || 'Data';
-        
-        let cellContent = '';
-        if (cIdx === 0) {
-          const d = parseDateCell(cell);
-          if (d) {
-            cellContent = `${cell} <span style="font-size:0.7rem; color:var(--text-muted); display:block;">(${getRelativeTimeString(d)})</span>`;
-          } else {
-            cellContent = cell || '';
-          }
-        } else if (formId === 'form_cleaning_audit' && cIdx > 1) {
-          cellContent = formatCleaningCell(cell);
-        } else if (formId === 'form_10_7_setup_check' && cIdx > 3) {
-          cellContent = formatSetupCell(cell);
-        } else if ((formId === 'form_multi_stitch_camera_saiambe' || formId.includes('camera')) && cIdx > 3) {
-          cellContent = formatCameraCell(cell);
+      let cellContent = '';
+      if (cIdx === 0) {
+        const d = parseDateCell(cell);
+        if (d) {
+          cellContent = `${cell} <span style="font-size:0.7rem; color:var(--text-muted); display:block;">(${getRelativeTimeString(d)})</span>`;
         } else {
           cellContent = cell || '';
         }
-        
-        cellsHtml += `<td data-label="${headerLabel}">${cellContent}</td>`;
-        
-        if (cIdx === 3 && (formId === 'form_10_7_setup_check' || formId === 'form_multi_stitch_camera_saiambe')) {
-          const stats = getMissedCountInRow(row, headers, formId);
-          const badgeColor = stats.missed > 0 ? '#ef4444' : '#10b981';
-          const bgLight = stats.missed > 0 ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)';
-          cellsHtml += `
-            <td data-label="બાકી ઓડિટ" style="text-align:center; background:${bgLight};">
-              <span style="color:${badgeColor}; font-weight:800; font-size:0.8rem; padding:3px 8px; border-radius:6px; border: 1px solid ${badgeColor};">
-                ${stats.missed} / ${stats.total} બાકી
-              </span>
-            </td>
-          `;
-        }
-      });
-
-      tr.innerHTML = `
-        <td data-label="No"><strong>${idx + 1}</strong></td>
-        ${cellsHtml}
-      `;
-      tbody.appendChild(tr);
+      } else if (formId === 'form_cleaning_audit' && cIdx > 1) {
+        cellContent = formatCleaningCell(cell);
+      } else if (formId === 'form_10_7_setup_check' && cIdx > 3) {
+        cellContent = formatSetupCell(cell);
+      } else if ((formId === 'form_multi_stitch_camera_saiambe' || formId.includes('camera')) && cIdx > 3) {
+        cellContent = formatCameraCell(cell);
+      } else if (isActivePartSheet && cIdx > 3) {
+        cellContent = formatActivePartCell(cell);
+      } else {
+        cellContent = cell || '';
+      }
+      
+      cellsHtml += `<td data-label="${headerLabel}">${cellContent}</td>`;
+      
+      if (cIdx === 3 && (formId === 'form_10_7_setup_check' || formId === 'form_multi_stitch_camera_saiambe' || isActivePartSheet)) {
+        const stats = getMissedCountInRow(row, headers, formId);
+        const badgeColor = stats.missed > 0 ? '#ef4444' : '#10b981';
+        const bgLight = stats.missed > 0 ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)';
+        cellsHtml += `
+          <td data-label="બાકી ઓડિટ" style="text-align:center; background:${bgLight};">
+            <span style="color:${badgeColor}; font-weight:800; font-size:0.8rem; padding:3px 8px; border-radius:6px; border: 1px solid ${badgeColor};">
+              ${stats.missed} / ${stats.total} બાકી
+            </span>
+          </td>
+        `;
+      }
     });
-  }
 
+    tr.innerHTML = `
+      <td data-label="No"><strong>${idx + 1}</strong></td>
+      ${cellsHtml}
+    `;
+    tbody.appendChild(tr);
+  });
   // Update the top master stats cards dynamically to reflect selected date/timeframe filter
   renderDashboardTable();
 }
@@ -2962,26 +2818,28 @@ function getMissedCountInRow(row, headers, formId) {
   let missedCount = 0;
   let totalCount = 0;
   
-  if (formId === 'form_10_7_setup_check') {
-    headers.forEach((h, idx) => {
-      if (idx > 3 && h.includes('મશીન')) {
-        totalCount++;
-        const val = String(row[idx] || '').trim();
-        if (val === '' || val === '-') {
-          missedCount++;
-        }
+  headers.forEach((h, idx) => {
+    if (idx > 3 && (h.includes('મશીન') || h.includes('કેમેરા'))) {
+      totalCount++;
+      const val = String(row[idx] || '').trim();
+      if (val === '' || val === '-') {
+        missedCount++;
       }
-    });
-  } else if (formId === 'form_multi_stitch_camera_saiambe') {
-    headers.forEach((h, idx) => {
-      if (idx > 3 && h.includes('કેમેરા')) {
-        totalCount++;
-        const val = String(row[idx] || '').trim();
-        if (val === '' || val === '-') {
-          missedCount++;
-        }
-      }
-    });
-  }
+    }
+  });
   return { missed: missedCount, total: totalCount };
+}
+
+// Custom cell formatter for Active Part checklist
+function formatActivePartCell(cellVal) {
+  const val = String(cellVal || '').trim();
+  if (val === '' || val === '-') {
+    return `<span style="color:#ef4444; font-size:0.75rem; font-weight:600;">⚠️ Not Checked</span>`;
+  }
+  
+  if (val === '0' || val.toLowerCase() === 'ok' || val.toLowerCase() === 'ok') {
+    return `<span style="color:#10b981; font-weight:700; font-size:0.8rem;">🟢 ✔️ All OK</span>`;
+  }
+  
+  return `<span style="color:#ef4444; font-weight:800; font-size:0.8rem;">❌ ${val}</span>`;
 }
