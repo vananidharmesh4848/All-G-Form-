@@ -294,6 +294,41 @@
             </div>
           </div>
         </div>
+
+        <!-- Machine-wise Diagnostic Analysis Panel -->
+        <div class="card" style="margin-top: 20px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:15px; margin-bottom: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
+            <h2 style="font-size: 1.2rem; font-weight: 700; color: var(--text-main); margin-bottom: 0;">🔎 મશીન-વાઇઝ વિગતવાર ખામી વિશ્લેષણ (Machine-wise Issue Diagnostic)</h2>
+            <div class="form-group" style="margin-bottom: 0; display:flex; align-items:center; gap:10px;">
+              <label for="diagnosticMachineSelect" style="font-weight: 600; white-space:nowrap; margin-bottom:0;">મશીન પસંદ કરો (Select Machine):</label>
+              <select id="diagnosticMachineSelect" onchange="renderMachineDiagnostic()" style="padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-main);">
+                <!-- Dynamic machine numbers -->
+              </select>
+            </div>
+          </div>
+          
+          <div class="grid-2" style="gap:20px;">
+            <!-- Left Side: Last 24 Hours Detailed Log -->
+            <div style="background: rgba(239, 68, 68, 0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px;">
+              <h3 style="font-size: 1rem; font-weight: 700; color: var(--text-main); margin-bottom: 12px; display:flex; align-items:center; gap:8px;">
+                🔴 છેલ્લા ૨૪ કલાકમાં મળેલી ખામીઓ (Issues in Last 24 Hours)
+              </h3>
+              <div id="diagnostic24hContainer" style="max-height: 300px; overflow-y: auto;">
+                <!-- Dynamic content -->
+              </div>
+            </div>
+            
+            <!-- Right Side: Weekly Problem Frequency -->
+            <div style="background: rgba(245, 158, 11, 0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px;">
+              <h3 style="font-size: 1rem; font-weight: 700; color: var(--text-main); margin-bottom: 12px; display:flex; align-items:center; gap:8px;">
+                📊 છેલ્લા અઠવાડિયામાં ખામીઓની આવૃત્તિ (Weekly Issue Frequency)
+              </h3>
+              <div id="diagnosticWeeklyContainer" style="max-height: 300px; overflow-y: auto;">
+                <!-- Dynamic content -->
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
     </main>

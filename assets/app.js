@@ -478,6 +478,8 @@ function switchTab(tabId) {
       });
     }
     updateAnalyticsCharts();
+    populateDiagnosticMachineSelect();
+    renderMachineDiagnostic();
   }
 }
 
@@ -1293,6 +1295,169 @@ function updateAnalyticsCharts() {
       }
     }
   });
+}
+
+// Populate diagnostic machine selector with all unique machine names found across all forms
+function populateDiagnosticMachineSelect() {
+  const diagSel = document.getElementById('diagnosticMachineSelect');
+  if (!diagSel) return;
+  
+  const machines = new Set();
+  
+  appData.registeredForms.forEach(form => {
+    const subData = appData.submissions[form.id] || { headers: [], rows: [] };
+    const headers = subData.headers || [];
+    headers.forEach((h, idx) => {
+      if (idx > 3 && h.trim()) {
+        const cleanH = h.trim();
+        const metadataKeywords = ['email', 'username', 'submitter', 'operator', 'નામ', 'ઇમેઇલ', 'ઓપરેટર', 'નામ/ઈમેલ', 'તારીખ', 'સમય', 'timestamp'];
+        if (!metadataKeywords.some(kw => cleanH.toLowerCase().includes(kw))) {
+          machines.add(cleanH);
+        }
+      }
+    });
+  });
+  
+  const sorted = Array.from(machines).sort((a, b) => {
+    return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+  });
+  
+  const prevVal = diagSel.value;
+  diagSel.innerHTML = '';
+  
+  if (sorted.length === 0) {
+    const optNone = document.createElement('option');
+    optNone.value = '';
+    optNone.textContent = 'કોઈ મશીન ઉપલબ્ધ નથી (No machines)';
+    diagSel.appendChild(optNone);
+    return;
+  }
+  
+  sorted.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m;
+    opt.textContent = m;
+    if (m === prevVal) opt.selected = true;
+    diagSel.appendChild(opt);
+  });
+}
+
+// Render machine-wise issue diagnostic lists (last 24 hours & weekly frequency)
+function renderMachineDiagnostic() {
+  const diagSel = document.getElementById('diagnosticMachineSelect');
+  const container24h = document.getElementById('diagnostic24hContainer');
+  const containerWeekly = document.getElementById('diagnosticWeeklyContainer');
+  
+  if (!diagSel || !container24h || !containerWeekly) return;
+  
+  const selectedMachine = diagSel.value;
+  if (!selectedMachine) {
+    container24h.innerHTML = '<p class="text-muted" style="text-align:center; padding:20px;">કૃપા કરીને મશીન પસંદ કરો</p>';
+    containerWeekly.innerHTML = '<p class="text-muted" style="text-align:center; padding:20px;">કૃપા કરીને મશીન પસંદ કરો</p>';
+    return;
+  }
+  
+  const now = new Date();
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  
+  const issues24h = [];
+  const weeklyCounts = {};
+  
+  appData.registeredForms.forEach(form => {
+    const subData = appData.submissions[form.id] || { headers: [], rows: [] };
+    const headers = subData.headers || [];
+    const rows = subData.rows || [];
+    
+    rows.forEach(row => {
+      const ts = parseDateCell(row[0]);
+      if (ts) {
+        const rowIssues = getIssuesInRow(row, headers, form.id);
+        rowIssues.forEach(iss => {
+          if (iss.machine === selectedMachine) {
+            let desc = '';
+            if (iss.parameter === 'Not Checked' || iss.parameter === 'Blank Value') {
+              desc = 'ઓડિટ બાકી છે / skipped check';
+            } else if (iss.parameter === 'Deviation') {
+              desc = `ડેવિએશન (Deviation): ${iss.value}`;
+            } else {
+              desc = `${iss.parameter} બાકી છે`;
+            }
+            
+            if (ts >= oneDayAgo) {
+              issues24h.push({
+                time: ts,
+                formName: form.name,
+                description: desc
+              });
+            }
+            
+            if (ts >= sevenDaysAgo) {
+              const key = `${form.name} | ${desc}`;
+              weeklyCounts[key] = (weeklyCounts[key] || 0) + 1;
+            }
+          }
+        });
+      }
+    });
+  });
+  
+  issues24h.sort((a, b) => b.time - a.time);
+  
+  if (issues24h.length === 0) {
+    container24h.innerHTML = `
+      <div style="text-align: center; padding: 25px 15px; color: #10b981; font-weight: 600; display:flex; flex-direction:column; align-items:center; gap:8px;">
+        <span style="font-size: 2rem;">🟢</span>
+        <span>છેલ્લા ૨૪ કલાકમાં કોઈ સમસ્યા નથી!<br><span style="font-size:0.8rem; font-weight:normal; color:var(--text-muted);">(No issues in last 24 hours)</span></span>
+      </div>
+    `;
+  } else {
+    let html = '<div style="display:flex; flex-direction:column; gap:8px;">';
+    issues24h.forEach(iss => {
+      const timeStr = iss.time.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      const dateStr = iss.time.toLocaleDateString('en-GB');
+      html += `
+        <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-left: 4px solid #ef4444; border-radius: 6px; padding: 10px 12px; font-size: 0.85rem;">
+          <div style="display:flex; justify-content:space-between; margin-bottom: 4px;">
+            <strong style="color:var(--text-main);">${iss.formName}</strong>
+            <span style="color:var(--text-muted); font-size:0.75rem;">⏱️ ${dateStr} ${timeStr}</span>
+          </div>
+          <div style="color: #ef4444; font-weight: 600;">⚠️ ${iss.description}</div>
+        </div>
+      `;
+    });
+    html += '</div>';
+    container24h.innerHTML = html;
+  }
+  
+  const weeklySorted = Object.entries(weeklyCounts).sort((a, b) => b[1] - a[1]);
+  
+  if (weeklySorted.length === 0) {
+    containerWeekly.innerHTML = `
+      <div style="text-align: center; padding: 25px 15px; color: #10b981; font-weight: 600; display:flex; flex-direction:column; align-items:center; gap:8px;">
+        <span style="font-size: 2rem;">🟢</span>
+        <span>છેલ્લા ૭ દિવસમાં કોઈ સમસ્યા નથી!<br><span style="font-size:0.8rem; font-weight:normal; color:var(--text-muted);">(No issues in last 7 days)</span></span>
+      </div>
+    `;
+  } else {
+    let html = '<div style="display:flex; flex-direction:column; gap:8px;">';
+    weeklySorted.forEach(([key, count]) => {
+      const [fName, desc] = key.split(' | ');
+      html += `
+        <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-left: 4px solid #f59e0b; border-radius: 6px; padding: 10px 12px; font-size: 0.85rem; display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <div style="font-weight: 600; color:var(--text-main); margin-bottom:2px;">${desc}</div>
+            <div style="font-size: 0.75rem; color:var(--text-muted);">${fName}</div>
+          </div>
+          <div style="background: rgba(245, 158, 11, 0.15); color: #b45309; font-weight: 800; padding: 4px 10px; border-radius: 20px; font-size:0.8rem;">
+            ${count} વાર (times)
+          </div>
+        </div>
+      `;
+    });
+    html += '</div>';
+    containerWeekly.innerHTML = html;
+  }
 }
 
 // Switch timeframe for charts
