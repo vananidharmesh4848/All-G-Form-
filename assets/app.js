@@ -955,6 +955,78 @@ function renderActiveConnectionsTable() {
 }
 
 // Re-render Volume and Distribution charts dynamically using Chart.js
+// Get list of issues in a single response row
+function getIssuesInRow(row, headers, formId) {
+  const issues = [];
+  const formIdLower = String(formId).toLowerCase();
+  
+  if (formIdLower.includes('active') || formIdLower.includes('part')) {
+    // Active Part Check
+    headers.forEach((h, idx) => {
+      if (idx > 3 && h.trim()) {
+        const val = String(row[idx] || '').trim();
+        if (val === '' || val === '-') {
+          issues.push({ machine: h.trim(), parameter: 'Not Checked', value: 'Not Checked' });
+        } else if (val !== '0' && val.toLowerCase() !== 'ok') {
+          issues.push({ machine: h.trim(), parameter: 'Deviation', value: val });
+        }
+      }
+    });
+  } else if (formIdLower.includes('setup') || formIdLower.includes('camera') || formIdLower.includes('stitch')) {
+    // Setup Check or Camera Check
+    const standardParams = [
+      'સ્ટોન ઓકે',
+      'ઈમેજ ઓકે',
+      'એલાઈનમેન્ટ ઓકે',
+      'સ્ટેજ ઓકે',
+      'વાઈટનર ઓકે',
+      'સી ડ્રાઈવ ઓકે',
+      'લોગ ઓકે',
+      'નિયરેસ્ટ ઓકે',
+      'સબ સપ્લાય ઓકે'
+    ];
+    
+    headers.forEach((h, idx) => {
+      if (idx > 3 && h.trim()) {
+        const val = String(row[idx] || '').trim();
+        if (val === '' || val === '-') {
+          issues.push({ machine: h.trim(), parameter: 'Not Checked', value: 'Not Checked' });
+        } else {
+          standardParams.forEach(p => {
+            if (!val.includes(p)) {
+              issues.push({ machine: h.trim(), parameter: p, value: 'Missing' });
+            }
+          });
+        }
+      }
+    });
+  } else if (formIdLower.includes('cleaning')) {
+    // Cleaning Checklist
+    headers.forEach((h, idx) => {
+      if (idx > 0 && h.trim()) {
+        const val = String(row[idx] || '').trim();
+        if (val.includes('પાણી લીકેજ')) {
+          issues.push({ machine: h.trim(), parameter: 'પાણી લીકેજ', value: 'પાણી લીકેજ' });
+        }
+        if (val.includes('કચરું જોવું')) {
+          issues.push({ machine: h.trim(), parameter: 'કચરું જોવું', value: 'કચરું જોવું' });
+        }
+      }
+    });
+  } else {
+    // Generic dynamic forms (empty values are treated as skipped/pending checks)
+    headers.forEach((h, idx) => {
+      if (idx > 3 && h.trim()) {
+        const val = String(row[idx] || '').trim();
+        if (val === '' || val === '-') {
+          issues.push({ machine: h.trim(), parameter: 'Blank Value', value: 'Blank' });
+        }
+      }
+    });
+  }
+  return issues;
+}
+
 function updateAnalyticsCharts() {
   const volCtx = document.getElementById('analyticsVolumeChart');
   const shareCtx = document.getElementById('analyticsShareChart');
@@ -999,20 +1071,37 @@ function updateAnalyticsCharts() {
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
+  const colors = [
+    'rgba(59, 130, 246, 0.75)',
+    'rgba(16, 185, 129, 0.75)',
+    'rgba(245, 158, 11, 0.75)',
+    'rgba(239, 68, 68, 0.75)',
+    'rgba(139, 92, 246, 0.75)',
+    'rgba(236, 72, 153, 0.75)',
+    'rgba(20, 184, 166, 0.75)',
+    'rgba(244, 63, 94, 0.75)'
+  ];
+
+  const borderColors = [
+    '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f43f5e'
+  ];
+
   // -------------------------------------------------------------
-  // ALL FORMS PLOTTING (DAILY PROPORTION STACKED BAR + DOUGHNUT)
+  // ALL FORMS PLOTTING (STACKED MACHINE ISSUES + ISSUES SHARE)
   // -------------------------------------------------------------
   if (formId === 'all_forms') {
-    document.getElementById('chart1Title').textContent = '📊 ફોર્મ વાઇઝ દૈનિક એન્ટ્રી પ્રમાણ (Daily Submissions per Form)';
-    document.getElementById('chart2Title').textContent = '📊 કુલ સબમિશન શેર વિશ્લેષણ (Total Submissions Share per Form)';
+    document.getElementById('chart1Title').textContent = '📊 મશીન-વાઇઝ કુલ ખામીઓનો હિસાબ (Overall Issues per Machine)';
+    document.getElementById('chart2Title').textContent = '📊 કુલ સમસ્યાઓમાં ફોર્મ-વાઇઝ હિસ્સો (Issues Share by Form)';
 
-    const formDatasets = {};
-    const allDatesSet = new Set();
+    const machineIssues = {}; // machineName -> { formId -> count }
+    const formTotalIssues = {}; // formId -> count
+    const allMachineNames = new Set();
 
     appData.registeredForms.forEach(f => {
-      formDatasets[f.id] = {};
+      formTotalIssues[f.id] = 0;
       const fSub = appData.submissions[f.id] || { headers: [], rows: [] };
       const fRows = fSub.rows || [];
+      const fHeaders = fSub.headers || [];
 
       fRows.forEach(row => {
         const ts = parseDateCell(row[0]);
@@ -1026,50 +1115,39 @@ function updateAnalyticsCharts() {
             if (ts.getFullYear() !== currentYear || ts.getMonth() !== currentMonth) keep = false;
           }
           if (keep) {
-            const dateStr = ts.toLocaleDateString('en-GB');
-            allDatesSet.add(dateStr);
-            formDatasets[f.id][dateStr] = (formDatasets[f.id][dateStr] || 0) + 1;
+            const rowIssues = getIssuesInRow(row, fHeaders, f.id);
+            rowIssues.forEach(iss => {
+              const mName = iss.machine;
+              allMachineNames.add(mName);
+              if (!machineIssues[mName]) machineIssues[mName] = {};
+              machineIssues[mName][f.id] = (machineIssues[mName][f.id] || 0) + 1;
+              formTotalIssues[f.id]++;
+            });
           }
         }
       });
     });
 
-    const sortedDates = Array.from(allDatesSet).sort((a, b) => {
-      const partsA = a.split('/');
-      const partsB = b.split('/');
-      return new Date(partsA[2], partsA[1] - 1, partsA[0]) - new Date(partsB[2], partsB[1] - 1, partsB[0]);
+    const sortedMachines = Array.from(allMachineNames).sort((a, b) => {
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
     });
 
-    const colors = [
-      'rgba(59, 130, 246, 0.75)',
-      'rgba(16, 185, 129, 0.75)',
-      'rgba(245, 158, 11, 0.75)',
-      'rgba(239, 68, 68, 0.75)',
-      'rgba(139, 92, 246, 0.75)',
-      'rgba(236, 72, 153, 0.75)'
-    ];
-
-    const borderColors = [
-      '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
-    ];
-
     const datasets = appData.registeredForms.map((f, idx) => {
-      const dataPoints = sortedDates.map(d => formDatasets[f.id][d] || 0);
+      const dataPoints = sortedMachines.map(m => (machineIssues[m] && machineIssues[m][f.id]) || 0);
       return {
         label: f.name,
         data: dataPoints,
         backgroundColor: colors[idx % colors.length],
         borderColor: borderColors[idx % borderColors.length],
-        borderWidth: 2,
-        tension: 0.3,
-        fill: false
+        borderWidth: 1,
+        stack: 'Stack 0'
       };
     });
 
     appData.chartInstanceVolume = new Chart(volCtx, {
       type: 'bar',
       data: {
-        labels: sortedDates,
+        labels: sortedMachines,
         datasets: datasets
       },
       options: {
@@ -1087,31 +1165,10 @@ function updateAnalyticsCharts() {
           y: { 
             stacked: true,
             grid: { color: gridColor },
-            ticks: { color: textColor }
+            ticks: { color: textColor, precision: 0 }
           }
         }
       }
-    });
-
-    const totalShares = appData.registeredForms.map(f => {
-      const fSub = appData.submissions[f.id] || { headers: [], rows: [] };
-      const fRows = fSub.rows || [];
-      let count = 0;
-      fRows.forEach(row => {
-        const ts = parseDateCell(row[0]);
-        if (ts) {
-          let keep = true;
-          if (appData.analyticsTimeframe === '24h') {
-            if (ts < oneDayAgo) keep = false;
-          } else if (appData.analyticsTimeframe === 'last_week') {
-            if (ts < sevenDaysAgo) keep = false;
-          } else if (appData.analyticsTimeframe === 'current_month') {
-            if (ts.getFullYear() !== currentYear || ts.getMonth() !== currentMonth) keep = false;
-          }
-          if (keep) count++;
-        }
-      });
-      return count;
     });
 
     appData.chartInstanceShare = new Chart(shareCtx, {
@@ -1119,7 +1176,7 @@ function updateAnalyticsCharts() {
       data: {
         labels: appData.registeredForms.map(f => f.name),
         datasets: [{
-          data: totalShares,
+          data: appData.registeredForms.map(f => formTotalIssues[f.id] || 0),
           backgroundColor: colors.slice(0, appData.registeredForms.length)
         }]
       },
@@ -1135,11 +1192,13 @@ function updateAnalyticsCharts() {
     return;
   }
 
+  // -------------------------------------------------------------
+  // SPECIFIC FORM ANALYSIS (ISSUES PER MACHINE + ISSUES PER QUESTION)
+  // -------------------------------------------------------------
   const subData = appData.submissions[formId] || { headers: [], rows: [] };
   const headers = subData.headers || [];
   const rows = subData.rows || [];
 
-  // Filter rows based on selected analyticsTimeframe
   const filteredRows = rows.filter(row => {
     const ts = parseDateCell(row[0]);
     if (ts) {
@@ -1161,287 +1220,79 @@ function updateAnalyticsCharts() {
     return;
   }
 
-  if (formId === 'form_cleaning_audit') {
-    // -------------------------------------------------------------
-    // SPECIALIZED CHARTS FOR CLEANING CHECKLIST
-    // -------------------------------------------------------------
-    document.getElementById('chart1Title').textContent = '🧹 કયા સેક્શન/વિસ્તારમાં વધુ સમસ્યાઓ મળી? (Room-wise Issues)';
-    document.getElementById('chart2Title').textContent = '📈 દૈનિક ઓડિટ અને ખામીઓનો ટ્રેન્ડ (Daily Audit & Issues Trend)';
+  document.getElementById('chart1Title').textContent = '📊 મશીન-વાઇઝ મળેલી ખામીઓ (Issues per Machine)';
+  document.getElementById('chart2Title').textContent = '📋 પ્રશ્ન/પેરામીટર વાઇઝ ખામીઓ (Issues per Parameter/Question)';
 
-    // Chart 1: Room-wise problems counts
-    const roomIssues = [];
-    headers.forEach((header, index) => {
-      if (index > 0 && header.trim()) {
-        let count = 0;
-        filteredRows.forEach(row => {
-          const cellVal = String(row[index] || '');
-          if (cellVal.includes('પાણી લીકેજ') || cellVal.includes('કચરું જોવું')) {
-            count++;
-          }
-        });
-        roomIssues.push({ name: header.trim(), count: count });
-      }
+  const machineCounts = {};
+  const paramCounts = {};
+
+  filteredRows.forEach(row => {
+    const rowIssues = getIssuesInRow(row, headers, formId);
+    rowIssues.forEach(iss => {
+      machineCounts[iss.machine] = (machineCounts[iss.machine] || 0) + 1;
+      paramCounts[iss.parameter] = (paramCounts[iss.parameter] || 0) + 1;
     });
+  });
 
-    // Sort roomIssues descending by count
-    roomIssues.sort((a, b) => b.count - a.count);
+  const activeMachines = Object.keys(machineCounts).sort((a, b) => {
+    return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+  });
+  const machineDataPoints = activeMachines.map(m => machineCounts[m]);
 
-    const roomLabels = roomIssues.map(r => r.name);
-    const roomCounts = roomIssues.map(r => r.count);
+  const activeParams = Object.keys(paramCounts).sort((a, b) => paramCounts[b] - paramCounts[a]);
+  const paramDataPoints = activeParams.map(p => paramCounts[p]);
 
-    appData.chartInstanceVolume = new Chart(volCtx, {
-      type: 'bar',
-      data: {
-        labels: roomLabels,
-        datasets: [{
-          label: 'સમસ્યા ગણતરી (Total Issues)',
-          data: roomCounts,
-          backgroundColor: '#ef4444',
-          borderRadius: 4
-        }]
+  appData.chartInstanceVolume = new Chart(volCtx, {
+    type: 'bar',
+    data: {
+      labels: activeMachines,
+      datasets: [{
+        label: 'મળેલી ખામીઓ (Issues)',
+        data: machineDataPoints,
+        backgroundColor: 'rgba(239, 68, 68, 0.75)',
+        borderColor: '#ef4444',
+        borderWidth: 1,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false }
       },
-      options: {
-        indexAxis: 'y', // HORIZONTAL BAR CHART!
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false }
-        },
-        scales: {
-          x: {
-            beginAtZero: true,
-            ticks: { color: textColor, precision: 0 },
-            grid: { color: gridColor }
-          },
-          y: {
-            ticks: { color: textColor },
-            grid: { color: gridColor }
-          }
-        }
-      }
-    });
-
-    // Chart 2: Daily audit & issues trend
-    const dailyData = {};
-    filteredRows.forEach(row => {
-      const ts = parseDateCell(row[0]);
-      if (ts) {
-        const dd = String(ts.getDate()).padStart(2, '0');
-        const mm = String(ts.getMonth() + 1).padStart(2, '0');
-        const yyyy = ts.getFullYear();
-        const dateKey = `${yyyy}-${mm}-${dd}`; // YYYY-MM-DD for sorting
-
-        if (!dailyData[dateKey]) {
-          dailyData[dateKey] = {
-            displayDate: `${dd}-${mm}-${yyyy}`,
-            audits: 0,
-            issues: 0
-          };
-        }
-
-        dailyData[dateKey].audits++;
-
-        // Count issues in this row
-        headers.forEach((header, index) => {
-          if (index > 0) {
-            const cellVal = String(row[index] || '');
-            if (cellVal.includes('પાણી લીકેજ') || cellVal.includes('કચરું જોવું')) {
-              dailyData[dateKey].issues++;
-            }
-          }
-        });
-      }
-    });
-
-    // Sort chronologically
-    const sortedDateKeys = Object.keys(dailyData).sort();
-    const trendLabels = sortedDateKeys.map(k => dailyData[k].displayDate);
-    const trendAudits = sortedDateKeys.map(k => dailyData[k].audits);
-    const trendIssues = sortedDateKeys.map(k => dailyData[k].issues);
-
-    appData.chartInstanceShare = new Chart(shareCtx, {
-      type: 'line',
-      data: {
-        labels: trendLabels,
-        datasets: [
-          {
-            label: 'ઓડિટ સંખ્યા (Total Audits)',
-            data: trendAudits,
-            borderColor: '#0d9488',
-            backgroundColor: 'rgba(13, 148, 136, 0.1)',
-            tension: 0.3,
-            fill: true
-          },
-          {
-            label: 'મળેલી ખામીઓ (Issues Found)',
-            data: trendIssues,
-            borderColor: '#ef4444',
-            backgroundColor: 'rgba(239, 68, 68, 0.1)',
-            tension: 0.3,
-            fill: true
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'top',
-            labels: { color: textColor }
-          }
-        },
-        scales: {
-          x: {
-            ticks: { color: textColor },
-            grid: { color: gridColor }
-          },
-          y: {
-            beginAtZero: true,
-            ticks: { color: textColor, precision: 0 },
-            grid: { color: gridColor }
-          }
-        }
-      }
-    });
-
-  } else {
-    // -------------------------------------------------------------
-    // GENERIC CHARTS FOR DYNAMICALLY CONNECTED FORMS
-    // -------------------------------------------------------------
-    document.getElementById('chart1Title').textContent = '📈 દૈનિક સબમિશન સંખ્યા ટ્રેન્ડ (Daily Submissions)';
-    document.getElementById('chart2Title').textContent = '🍰 ઓપરેટર્સ વાઇઝ એન્ટ્રી શેર % (Operator Share %)';
-
-    // Chart 1: Daily Submission Counts
-    const dailyVolume = {};
-    filteredRows.forEach(row => {
-      const ts = parseDateCell(row[0]);
-      if (ts) {
-        const dd = String(ts.getDate()).padStart(2, '0');
-        const mm = String(ts.getMonth() + 1).padStart(2, '0');
-        const yyyy = ts.getFullYear();
-        const dateKey = `${yyyy}-${mm}-${dd}`;
-
-        if (!dailyVolume[dateKey]) {
-          dailyVolume[dateKey] = {
-            displayDate: `${dd}-${mm}-${yyyy}`,
-            count: 0
-          };
-        }
-        dailyVolume[dateKey].count++;
-      }
-    });
-
-    const sortedVolKeys = Object.keys(dailyVolume).sort();
-    const volLabels = sortedVolKeys.map(k => dailyVolume[k].displayDate);
-    const volCounts = sortedVolKeys.map(k => dailyVolume[k].count);
-
-    appData.chartInstanceVolume = new Chart(volCtx, {
-      type: 'line',
-      data: {
-        labels: volLabels,
-        datasets: [{
-          label: 'સબમિશન સંખ્યા (Submissions)',
-          data: volCounts,
-          borderColor: '#0d9488',
-          backgroundColor: 'rgba(13, 148, 136, 0.1)',
-          tension: 0.3,
-          fill: true
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false }
-        },
-        scales: {
-          x: {
-            ticks: { color: textColor },
-            grid: { color: gridColor }
-          },
-          y: {
-            beginAtZero: true,
-            ticks: { color: textColor, precision: 0 },
-            grid: { color: gridColor }
-          }
-        }
-      }
-    });
-
-    // Chart 2: Submitter Share Doughnut
-    let submitterColIdx = -1;
-    const submitterKeywords = ['email', 'username', 'submitter', 'operator', 'નામ', 'ઇમેઇલ', 'ઓપરેટર', 'નામ/ઈમેલ'];
-    if (Array.isArray(headers)) {
-      headers.forEach((h, idx) => {
-        if (typeof h === 'string') {
-          const lowerH = h.toLowerCase();
-          if (submitterKeywords.some(kw => lowerH.includes(kw))) {
-            if (submitterColIdx === -1 || lowerH.includes('email') || lowerH.includes('ઓપરેટર')) {
-              submitterColIdx = idx;
-            }
-          }
-        }
-      });
-    }
-
-    if (submitterColIdx === -1 && Array.isArray(filteredRows) && filteredRows.length > 0) {
-      let numericCount = 0;
-      let checkCount = 0;
-      filteredRows.forEach(r => {
-        if (r && r[1] !== undefined && r[1] !== null) {
-          const val = String(r[1]).trim();
-          if (val !== '') {
-            checkCount++;
-            if (!isNaN(val)) {
-              numericCount++;
-            }
-          }
-        }
-      });
-      if (checkCount === 0 || numericCount / checkCount <= 0.5) {
-        submitterColIdx = 1;
+      scales: {
+        x: { ticks: { color: textColor }, grid: { color: gridColor } },
+        y: { beginAtZero: true, ticks: { color: textColor, precision: 0 }, grid: { color: gridColor } }
       }
     }
+  });
 
-    const submitterShare = {};
-    filteredRows.forEach(row => {
-      const operator = (submitterColIdx !== -1 && row[submitterColIdx])
-        ? String(row[submitterColIdx]).trim()
-        : 'System / ડેટા એન્ટ્રી';
-      submitterShare[operator] = (submitterShare[operator] || 0) + 1;
-    });
-
-    const opLabels = Object.keys(submitterShare);
-    const opCounts = Object.values(submitterShare);
-
-    const colors = [
-      '#0f766e', '#0d9488', '#14b8a6', '#2dd4bf', '#5eead4', '#99f6e4',
-      '#f59e0b', '#fbbf24', '#fcd34d', '#fde68a', '#fef3c7',
-      '#b45309', '#d97706', '#f59e0b', '#fbbf24'
-    ];
-
-    appData.chartInstanceShare = new Chart(shareCtx, {
-      type: 'doughnut',
-      data: {
-        labels: opLabels,
-        datasets: [{
-          data: opCounts,
-          backgroundColor: colors.slice(0, opLabels.length)
-        }]
+  appData.chartInstanceShare = new Chart(shareCtx, {
+    type: 'bar',
+    data: {
+      labels: activeParams,
+      datasets: [{
+        label: 'સમસ્યા ગણતરી (Total Count)',
+        data: paramDataPoints,
+        backgroundColor: 'rgba(59, 130, 246, 0.75)',
+        borderColor: '#3b82f6',
+        borderWidth: 1,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false }
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'right',
-            labels: { color: textColor }
-          }
-        }
+      scales: {
+        x: { ticks: { color: textColor }, grid: { color: gridColor } },
+        y: { beginAtZero: true, ticks: { color: textColor, precision: 0 }, grid: { color: gridColor } }
       }
-    });
-  }
+    }
+  });
 }
 
 // Switch timeframe for charts
