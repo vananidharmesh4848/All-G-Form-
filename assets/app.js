@@ -182,6 +182,24 @@ function bindGoogleSheet(event) {
   });
 }
 
+// Fetch with custom timeout helper to prevent hanging requests
+async function fetchWithTimeout(resource, options = {}) {
+  const { timeout = 6000 } = options;
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(resource, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(id);
+    return response;
+  } catch (error) {
+    clearTimeout(id);
+    throw error;
+  }
+}
+
 // Sync a single Google Sheet via server CORS proxy
 async function syncGoogleSheet(formId, quiet = false) {
   const form = appData.registeredForms.find(f => f.id === formId);
@@ -200,14 +218,15 @@ async function syncGoogleSheet(formId, quiet = false) {
 
     const directExportUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv${gidParam}`;
     
-    // Prioritized list of proxy attempts to bypass CORS blocks
-    const proxyAttempts = [];
+    // Prioritized list of proxy attempts to bypass CORS blocks.
+    // Try the direct URL first (Google Sheets CSV export natively supports CORS).
+    const proxyAttempts = [directExportUrl];
     
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
       // Local development server environment
       proxyAttempts.push(`/api/proxy-sheet?url=${encodeURIComponent(directExportUrl)}`);
     } else if (window.location.protocol === 'file:') {
-      // Opened directly via file:/// -> try local port 4343 proxy server first, then try public online proxies
+      // Opened directly via file:/// -> try local port 4343 proxy server next, then try public online proxies
       proxyAttempts.push(`http://localhost:4343/api/proxy-sheet?url=${encodeURIComponent(directExportUrl)}`);
       proxyAttempts.push(`https://corsproxy.io/?url=${encodeURIComponent(directExportUrl)}`);
       proxyAttempts.push(`https://api.allorigins.win/raw?url=${encodeURIComponent(directExportUrl)}`);
@@ -222,12 +241,12 @@ async function syncGoogleSheet(formId, quiet = false) {
 
     for (const url of proxyAttempts) {
       try {
-        console.log("Attempting fetch from proxy:", url);
-        response = await fetch(url);
+        console.log("Attempting fetch from:", url);
+        response = await fetchWithTimeout(url, { timeout: 6000 });
         if (response.ok) {
           break; // Fetch succeeded!
         } else {
-          lastError = new Error(`Proxy returned HTTP ${response.status}`);
+          lastError = new Error(`HTTP error ${response.status}`);
         }
       } catch (e) {
         lastError = e;
@@ -235,7 +254,7 @@ async function syncGoogleSheet(formId, quiet = false) {
     }
 
     if (!response || !response.ok) {
-      throw lastError || new Error("Failed to connect to Google Sheet via any proxy");
+      throw lastError || new Error("Failed to connect to Google Sheet");
     }
 
     const csvText = await response.text();
@@ -262,6 +281,7 @@ async function syncGoogleSheet(formId, quiet = false) {
 
   saveRegistryToStorage();
 }
+
 
 // Sync all connected Google Sheets sequentially
 async function syncAllGoogleSheets() {
