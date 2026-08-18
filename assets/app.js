@@ -1343,26 +1343,41 @@ function populateDiagnosticMachineSelect() {
 }
 
 // Render machine-wise issue diagnostic lists (last 24 hours & weekly frequency)
+// Helper to calculate relative time difference string
+function getFriendlyDowntimeDuration(sinceDate) {
+  const diffMs = new Date() - sinceDate;
+  const mins = Math.floor(diffMs / (1000 * 60));
+  const hrs = Math.floor(mins / 60);
+  const days = Math.floor(hrs / 24);
+  
+  if (days > 0) {
+    return `${days} દિવસ, ${hrs % 24} કલાકથી (${days}d, ${hrs % 24}h)`;
+  }
+  if (hrs > 0) {
+    return `${hrs} કલાક, ${mins % 60} મિનિટથી (${hrs}h, ${mins % 60}m)`;
+  }
+  return `${mins} મિનિટથી (${mins}m)`;
+}
+
+// Render machine-wise issue diagnostic lists, summary cards, and downtime reports
 function renderMachineDiagnostic() {
   const diagSel = document.getElementById('diagnosticMachineSelect');
   const container24h = document.getElementById('diagnostic24hContainer');
   const containerWeekly = document.getElementById('diagnosticWeeklyContainer');
+  const summaryCards = document.getElementById('diagnosticSummaryCards');
+  const downtimeContainer = document.getElementById('diagnosticDowntimeContainer');
   
-  if (!diagSel || !container24h || !containerWeekly) return;
-  
-  const selectedMachine = diagSel.value;
-  if (!selectedMachine) {
-    container24h.innerHTML = '<p class="text-muted" style="text-align:center; padding:20px;">કૃપા કરીને મશીન પસંદ કરો</p>';
-    containerWeekly.innerHTML = '<p class="text-muted" style="text-align:center; padding:20px;">કૃપા કરીને મશીન પસંદ કરો</p>';
-    return;
-  }
+  if (!diagSel || !container24h || !containerWeekly || !summaryCards || !downtimeContainer) return;
   
   const now = new Date();
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   
-  const issues24h = [];
-  const weeklyCounts = {};
+  // -------------------------------------------------------------
+  // PART 1: COMPUTE DIAGNOSTIC SUMMARIES FOR HIGHEST ISSUES
+  // -------------------------------------------------------------
+  const issues24hCounts = {};
+  const issuesWeeklyCounts = {};
   
   appData.registeredForms.forEach(form => {
     const subData = appData.submissions[form.id] || { headers: [], rows: [] };
@@ -1374,89 +1389,311 @@ function renderMachineDiagnostic() {
       if (ts) {
         const rowIssues = getIssuesInRow(row, headers, form.id);
         rowIssues.forEach(iss => {
-          if (iss.machine === selectedMachine) {
-            let desc = '';
-            if (iss.parameter === 'Not Checked' || iss.parameter === 'Blank Value') {
-              desc = 'ઓડિટ બાકી છે / skipped check';
-            } else if (iss.parameter === 'Deviation') {
-              desc = `ડેવિએશન (Deviation): ${iss.value}`;
-            } else {
-              desc = `${iss.parameter} બાકી છે`;
-            }
-            
-            if (ts >= oneDayAgo) {
-              issues24h.push({
-                time: ts,
-                formName: form.name,
-                description: desc
-              });
-            }
-            
-            if (ts >= sevenDaysAgo) {
-              const key = `${form.name} | ${desc}`;
-              weeklyCounts[key] = (weeklyCounts[key] || 0) + 1;
-            }
+          const mName = iss.machine;
+          if (ts >= oneDayAgo) {
+            issues24hCounts[mName] = (issues24hCounts[mName] || 0) + 1;
+          }
+          if (ts >= sevenDaysAgo) {
+            issuesWeeklyCounts[mName] = (issuesWeeklyCounts[mName] || 0) + 1;
           }
         });
       }
     });
   });
   
-  issues24h.sort((a, b) => b.time - a.time);
+  // Find highest issues in 24h
+  let highest24hMachine = '-';
+  let highest24hCount = 0;
+  Object.entries(issues24hCounts).forEach(([m, count]) => {
+    if (count > highest24hCount) {
+      highest24hCount = count;
+      highest24hMachine = m;
+    }
+  });
   
-  if (issues24h.length === 0) {
-    container24h.innerHTML = `
-      <div style="text-align: center; padding: 25px 15px; color: #10b981; font-weight: 600; display:flex; flex-direction:column; align-items:center; gap:8px;">
-        <span style="font-size: 2rem;">🟢</span>
-        <span>છેલ્લા ૨૪ કલાકમાં કોઈ સમસ્યા નથી!<br><span style="font-size:0.8rem; font-weight:normal; color:var(--text-muted);">(No issues in last 24 hours)</span></span>
+  // Find highest issues in weekly
+  let highestWeeklyMachine = '-';
+  let highestWeeklyCount = 0;
+  Object.entries(issuesWeeklyCounts).forEach(([m, count]) => {
+    if (count > highestWeeklyCount) {
+      highestWeeklyCount = count;
+      highestWeeklyMachine = m;
+    }
+  });
+  
+  // -------------------------------------------------------------
+  // PART 2: COMPUTE MACHINE DOWNTIME (BANDH) STATUS
+  // -------------------------------------------------------------
+  const downtimeReport = [];
+  const allMachinesSet = new Set();
+  
+  appData.registeredForms.forEach(form => {
+    const subData = appData.submissions[form.id] || { headers: [], rows: [] };
+    const headers = subData.headers || [];
+    headers.forEach((h, idx) => {
+      if (idx > 3 && h.trim()) {
+        const cleanH = h.trim();
+        const metadataKeywords = ['email', 'username', 'submitter', 'operator', 'નામ', 'ઇમેઇલ', 'ઓપરેટર', 'નામ/ઈમેલ', 'તારીખ', 'સમય', 'timestamp'];
+        if (!metadataKeywords.some(kw => cleanH.toLowerCase().includes(kw))) {
+          allMachinesSet.add(cleanH);
+        }
+      }
+    });
+  });
+  
+  appData.registeredForms.forEach(form => {
+    const subData = appData.submissions[form.id] || { headers: [], rows: [] };
+    const headers = subData.headers || [];
+    const rows = [...(subData.rows || [])];
+    
+    // Sort rows newest first
+    rows.sort((a, b) => {
+      const da = parseDateCell(a[0]);
+      const db = parseDateCell(b[0]);
+      if (!da) return 1;
+      if (!db) return -1;
+      return db - da;
+    });
+    
+    if (rows.length === 0) return;
+    
+    headers.forEach((h, colIdx) => {
+      if (colIdx > 3 && h.trim()) {
+        const mName = h.trim();
+        const metadataKeywords = ['email', 'username', 'submitter', 'operator', 'નામ', 'ઇમેઇલ', 'ઓપરેટર', 'નામ/ઈમેલ', 'તારીખ', 'સમય', 'timestamp'];
+        if (metadataKeywords.some(kw => mName.toLowerCase().includes(kw))) return;
+        
+        const latestRow = rows[0];
+        const valLatest = String(latestRow[colIdx] || '').trim();
+        
+        // Downtime criteria: cell is completely blank/empty/dash in the latest entry
+        if (valLatest === '' || valLatest === '-') {
+          let downtimeStarted = parseDateCell(latestRow[0]) || now;
+          
+          // Trace backward to find when it first became blank and stayed blank
+          for (let i = 1; i < rows.length; i++) {
+            const val = String(rows[i][colIdx] || '').trim();
+            if (val === '' || val === '-') {
+              downtimeStarted = parseDateCell(rows[i][0]) || downtimeStarted;
+            } else {
+              break;
+            }
+          }
+          
+          const diffMs = now - downtimeStarted;
+          const diffHrs = diffMs / (1000 * 60 * 60);
+          
+          downtimeReport.push({
+            machine: mName,
+            formName: form.name,
+            since: downtimeStarted,
+            hours: diffHrs,
+            isOver24h: diffHrs >= 24
+          });
+        }
+      }
+    });
+  });
+  
+  // Sort downtime report by longest duration first
+  downtimeReport.sort((a, b) => b.hours - a.hours);
+  
+  const currentClosedCount = downtimeReport.length;
+  const closedOver24hCount = downtimeReport.filter(d => d.isOver24h).length;
+  
+  // -------------------------------------------------------------
+  // PART 3: RENDER THE SUMMARY CARDS
+  // -------------------------------------------------------------
+  summaryCards.innerHTML = `
+    <!-- Card 1: 24h Highest Problem -->
+    <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-left: 4px solid #ef4444; border-radius: 8px; padding: 15px; box-shadow: var(--shadow-sm);">
+      <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 5px;">🔥 ૨૪ કલાકમાં સૌથી વધુ ખામીઓ</div>
+      <div style="font-size: 1.4rem; font-weight: 800; color: #ef4444; margin-bottom: 3px;">
+        ${highest24hMachine !== '-' ? highest24hMachine : 'કોઈ નહીં (None)'}
       </div>
-    `;
+      <div style="font-size: 0.8rem; color: var(--text-main);">
+        ${highest24hCount > 0 ? `કુલ <strong>${highest24hCount}</strong> વાર ખામી નોંધાયેલ છે` : 'બધા મશીન બરાબર ચાલે છે'}
+      </div>
+    </div>
+    
+    <!-- Card 2: Weekly Highest Problem -->
+    <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-left: 4px solid #f59e0b; border-radius: 8px; padding: 15px; box-shadow: var(--shadow-sm);">
+      <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 5px;">📊 ૭ દિવસમાં સૌથી વધુ ખામીઓ</div>
+      <div style="font-size: 1.4rem; font-weight: 800; color: #d97706; margin-bottom: 3px;">
+        ${highestWeeklyMachine !== '-' ? highestWeeklyMachine : 'કોઈ નહીં (None)'}
+      </div>
+      <div style="font-size: 0.8rem; color: var(--text-main);">
+        ${highestWeeklyCount > 0 ? `કુલ <strong>${highestWeeklyCount}</strong> વાર ખામી નોંધાયેલ છે` : 'બધા મશીન બરાબર ચાલે છે'}
+      </div>
+    </div>
+    
+    <!-- Card 3: Downtime Stats -->
+    <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-left: 4px solid #3b82f6; border-radius: 8px; padding: 15px; box-shadow: var(--shadow-sm);">
+      <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 5px;">🔌 મશીન બંધ (Downtime) રિપોર્ટ</div>
+      <div style="font-size: 1.4rem; font-weight: 800; color: #2563eb; margin-bottom: 3px;">
+        ${currentClosedCount} મશીનો બંધ છે
+      </div>
+      <div style="font-size: 0.8rem; color: var(--text-main);">
+        જેમાંથી <strong>${closedOver24hCount}</strong> મશીનો છેલ્લા ૨૪ કલાકથી બંધ છે.
+      </div>
+    </div>
+  `;
+  
+  // -------------------------------------------------------------
+  // PART 4: RENDER THE MACHINE SELECT DROP-DOWN LOGIC & CHARTS
+  // -------------------------------------------------------------
+  const selectedMachine = diagSel.value;
+  if (!selectedMachine) {
+    container24h.innerHTML = '<p class="text-muted" style="text-align:center; padding:20px;">કૃપા કરીને મશીન પસંદ કરો</p>';
+    containerWeekly.innerHTML = '<p class="text-muted" style="text-align:center; padding:20px;">કૃપા કરીને મશીન પસંદ કરો</p>';
   } else {
-    let html = '<div style="display:flex; flex-direction:column; gap:8px;">';
-    issues24h.forEach(iss => {
-      const timeStr = iss.time.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-      const dateStr = iss.time.toLocaleDateString('en-GB');
-      html += `
-        <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-left: 4px solid #ef4444; border-radius: 6px; padding: 10px 12px; font-size: 0.85rem;">
-          <div style="display:flex; justify-content:space-between; margin-bottom: 4px;">
-            <strong style="color:var(--text-main);">${iss.formName}</strong>
-            <span style="color:var(--text-muted); font-size:0.75rem;">⏱️ ${dateStr} ${timeStr}</span>
-          </div>
-          <div style="color: #ef4444; font-weight: 600;">⚠️ ${iss.description}</div>
+    const issues24h = [];
+    const weeklyCounts = {};
+    
+    appData.registeredForms.forEach(form => {
+      const subData = appData.submissions[form.id] || { headers: [], rows: [] };
+      const headers = subData.headers || [];
+      const rows = subData.rows || [];
+      
+      rows.forEach(row => {
+        const ts = parseDateCell(row[0]);
+        if (ts) {
+          const rowIssues = getIssuesInRow(row, headers, form.id);
+          rowIssues.forEach(iss => {
+            if (iss.machine === selectedMachine) {
+              let desc = '';
+              if (iss.parameter === 'Not Checked' || iss.parameter === 'Blank Value') {
+                desc = 'ઓડિટ બાકી છે / skipped check';
+              } else if (iss.parameter === 'Deviation') {
+                desc = `ડેવિએશન (Deviation): ${iss.value}`;
+              } else {
+                desc = `${iss.parameter} બાકી છે`;
+              }
+              
+              if (ts >= oneDayAgo) {
+                issues24h.push({
+                  time: ts,
+                  formName: form.name,
+                  description: desc
+                });
+              }
+              
+              if (ts >= sevenDaysAgo) {
+                const key = `${form.name} | ${desc}`;
+                weeklyCounts[key] = (weeklyCounts[key] || 0) + 1;
+              }
+            }
+          });
+        }
+      });
+    });
+    
+    issues24h.sort((a, b) => b.time - a.time);
+    
+    if (issues24h.length === 0) {
+      container24h.innerHTML = `
+        <div style="text-align: center; padding: 25px 15px; color: #10b981; font-weight: 600; display:flex; flex-direction:column; align-items:center; gap:8px;">
+          <span style="font-size: 2rem;">🟢</span>
+          <span>છેલ્લા ૨૪ કલાકમાં કોઈ સમસ્યા નથી!<br><span style="font-size:0.8rem; font-weight:normal; color:var(--text-muted);">(No issues in last 24 hours)</span></span>
         </div>
       `;
-    });
-    html += '</div>';
-    container24h.innerHTML = html;
+    } else {
+      let html = '<div style="display:flex; flex-direction:column; gap:8px;">';
+      issues24h.forEach(iss => {
+        const timeStr = iss.time.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        const dateStr = iss.time.toLocaleDateString('en-GB');
+        html += `
+          <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-left: 4px solid #ef4444; border-radius: 6px; padding: 10px 12px; font-size: 0.85rem;">
+            <div style="display:flex; justify-content:space-between; margin-bottom: 4px;">
+              <strong style="color:var(--text-main);">${iss.formName}</strong>
+              <span style="color:var(--text-muted); font-size:0.75rem;">⏱️ ${dateStr} ${timeStr}</span>
+            </div>
+            <div style="color: #ef4444; font-weight: 600;">⚠️ ${iss.description}</div>
+          </div>
+        `;
+      });
+      html += '</div>';
+      container24h.innerHTML = html;
+    }
+    
+    const weeklySorted = Object.entries(weeklyCounts).sort((a, b) => b[1] - a[1]);
+    
+    if (weeklySorted.length === 0) {
+      containerWeekly.innerHTML = `
+        <div style="text-align: center; padding: 25px 15px; color: #10b981; font-weight: 600; display:flex; flex-direction:column; align-items:center; gap:8px;">
+          <span style="font-size: 2rem;">🟢</span>
+          <span>છેલ્લા ૭ દિવસમાં કોઈ સમસ્યા નથી!<br><span style="font-size:0.8rem; font-weight:normal; color:var(--text-muted);">(No issues in last 7 days)</span></span>
+        </div>
+      `;
+    } else {
+      let html = '<div style="display:flex; flex-direction:column; gap:8px;">';
+      weeklySorted.forEach(([key, count]) => {
+        const [fName, desc] = key.split(' | ');
+        html += `
+          <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-left: 4px solid #f59e0b; border-radius: 6px; padding: 10px 12px; font-size: 0.85rem; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <div style="font-weight: 600; color:var(--text-main); margin-bottom:2px;">${desc}</div>
+              <div style="font-size: 0.75rem; color:var(--text-muted);">${fName}</div>
+            </div>
+            <div style="background: rgba(245, 158, 11, 0.15); color: #b45309; font-weight: 800; padding: 4px 10px; border-radius: 20px; font-size:0.8rem;">
+              ${count} વાર (times)
+            </div>
+          </div>
+        `;
+      });
+      html += '</div>';
+      containerWeekly.innerHTML = html;
+    }
   }
   
-  const weeklySorted = Object.entries(weeklyCounts).sort((a, b) => b[1] - a[1]);
-  
-  if (weeklySorted.length === 0) {
-    containerWeekly.innerHTML = `
-      <div style="text-align: center; padding: 25px 15px; color: #10b981; font-weight: 600; display:flex; flex-direction:column; align-items:center; gap:8px;">
-        <span style="font-size: 2rem;">🟢</span>
-        <span>છેલ્લા ૭ દિવસમાં કોઈ સમસ્યા નથી!<br><span style="font-size:0.8rem; font-weight:normal; color:var(--text-muted);">(No issues in last 7 days)</span></span>
+  // -------------------------------------------------------------
+  // PART 5: RENDER DOWNTIME (BANDH) REPORT TABLE
+  // -------------------------------------------------------------
+  if (downtimeReport.length === 0) {
+    downtimeContainer.innerHTML = `
+      <div style="text-align: center; padding: 30px; color: #10b981; font-weight: 600; font-size:1.1rem;">
+        🟢 બધા જ મશીનો ચાલુ છે! કોઈ મશીન બંધ નથી. (All machines are currently active)
       </div>
     `;
   } else {
-    let html = '<div style="display:flex; flex-direction:column; gap:8px;">';
-    weeklySorted.forEach(([key, count]) => {
-      const [fName, desc] = key.split(' | ');
-      html += `
-        <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-left: 4px solid #f59e0b; border-radius: 6px; padding: 10px 12px; font-size: 0.85rem; display:flex; justify-content:space-between; align-items:center;">
-          <div>
-            <div style="font-weight: 600; color:var(--text-main); margin-bottom:2px;">${desc}</div>
-            <div style="font-size: 0.75rem; color:var(--text-muted);">${fName}</div>
-          </div>
-          <div style="background: rgba(245, 158, 11, 0.15); color: #b45309; font-weight: 800; padding: 4px 10px; border-radius: 20px; font-size:0.8rem;">
-            ${count} વાર (times)
-          </div>
-        </div>
+    let tableHtml = `
+      <table class="table" style="width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: left;">
+        <thead>
+          <tr style="border-bottom: 2px solid var(--border-color); background: rgba(0,0,0,0.02);">
+            <th style="padding: 10px;">મશીન નંબર (Machine)</th>
+            <th style="padding: 10px;">ફોર્મ કનેક્શન (Form Source)</th>
+            <th style="padding: 10px;">ક્યારથી બંધ છે (Closed Since)</th>
+            <th style="padding: 10px;">બંધ રહેવાનો સમય (Downtime Duration)</th>
+            <th style="padding: 10px;">સ્ટેટસ (Downtime Status)</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+    
+    downtimeReport.forEach(item => {
+      const timeStr = item.since.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      const dateStr = item.since.toLocaleDateString('en-GB');
+      const durationText = getFriendlyDowntimeDuration(item.since);
+      const statusBadge = item.isOver24h 
+        ? `<span style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid #ef4444; padding: 4px 8px; border-radius: 4px; font-weight: 700; font-size: 0.75rem;">⚠️ છેલ્લા ૨૪ કલાકથી બંધ</span>`
+        : `<span style="background: rgba(59, 130, 246, 0.15); color: #2563eb; border: 1px solid #3b82f6; padding: 4px 8px; border-radius: 4px; font-weight: 700; font-size: 0.75rem;">⏳ બંધ છે (Downtime)</span>`;
+        
+      tableHtml += `
+        <tr style="border-bottom: 1px solid var(--border-color); ${item.isOver24h ? 'background: rgba(239, 68, 68, 0.01);' : ''}">
+          <td style="padding: 10px; font-weight: 700; color: var(--text-main);">${item.machine}</td>
+          <td style="padding: 10px; color: var(--text-muted);">${item.formName}</td>
+          <td style="padding: 10px; color: var(--text-main);">${dateStr} ${timeStr}</td>
+          <td style="padding: 10px; font-weight: 600; color: ${item.isOver24h ? '#ef4444' : 'var(--text-main)'};">${durationText}</td>
+          <td style="padding: 10px;">${statusBadge}</td>
+        </tr>
       `;
     });
-    html += '</div>';
-    containerWeekly.innerHTML = html;
+    
+    tableHtml += `
+        </tbody>
+      </table>
+    `;
+    downtimeContainer.innerHTML = tableHtml;
   }
 }
 

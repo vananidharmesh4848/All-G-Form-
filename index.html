@@ -307,6 +307,11 @@
             </div>
           </div>
           
+          <!-- Diagnostic Summary Cards (Most Problematic Machines and downtime stats) -->
+          <div id="diagnosticSummaryCards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; margin-bottom: 20px;">
+            <!-- Rendered dynamically -->
+          </div>
+
           <div class="grid-2" style="gap:20px;">
             <!-- Left Side: Last 24 Hours Detailed Log -->
             <div style="background: rgba(239, 68, 68, 0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px;">
@@ -328,6 +333,17 @@
               </div>
             </div>
           </div>
+
+          <!-- Downtime Report Section -->
+          <div style="margin-top: 25px; border-top: 1px solid var(--border-color); padding-top: 20px;">
+            <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--text-main); margin-bottom: 12px; display:flex; align-items:center; gap:8px;">
+              🔌 મશીન બંધ રિપોર્ટ (Machine Shutdown / Downtime Report)
+            </h3>
+            <div id="diagnosticDowntimeContainer" class="table-responsive">
+              <!-- Dynamic Table of closed machines -->
+            </div>
+          </div>
+        </div>
         </div>
       </div>
 
