@@ -1598,21 +1598,29 @@ function renderMachineDiagnostic() {
         </div>
       `;
     } else {
-      let html = '<div style="display:flex; flex-direction:column; gap:8px;">';
+      let html = `
+        <table class="table" style="width: 100%; border-collapse: collapse; font-size: 0.8rem; text-align: left;">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--border-color); background: rgba(0,0,0,0.02);">
+              <th style="padding: 8px;">સમય (Time)</th>
+              <th style="padding: 8px;">ફોર્મ (Form)</th>
+              <th style="padding: 8px;">ખામી વિગત (Issue Detail)</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
       issues24h.forEach(iss => {
         const timeStr = iss.time.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
         const dateStr = iss.time.toLocaleDateString('en-GB');
         html += `
-          <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-left: 4px solid #ef4444; border-radius: 6px; padding: 10px 12px; font-size: 0.85rem;">
-            <div style="display:flex; justify-content:space-between; margin-bottom: 4px;">
-              <strong style="color:var(--text-main);">${iss.formName}</strong>
-              <span style="color:var(--text-muted); font-size:0.75rem;">⏱️ ${dateStr} ${timeStr}</span>
-            </div>
-            <div style="color: #ef4444; font-weight: 600;">⚠️ ${iss.description}</div>
-          </div>
+          <tr style="border-bottom: 1px solid var(--border-color);">
+            <td style="padding: 8px; color:var(--text-muted);">${dateStr} ${timeStr}</td>
+            <td style="padding: 8px; font-weight: 700; color:var(--text-main);">${iss.formName}</td>
+            <td style="padding: 8px; color: #ef4444; font-weight: 600;">⚠️ ${iss.description}</td>
+          </tr>
         `;
       });
-      html += '</div>';
+      html += '</tbody></table>';
       container24h.innerHTML = html;
     }
     
@@ -1626,22 +1634,32 @@ function renderMachineDiagnostic() {
         </div>
       `;
     } else {
-      let html = '<div style="display:flex; flex-direction:column; gap:8px;">';
+      let html = `
+        <table class="table" style="width: 100%; border-collapse: collapse; font-size: 0.8rem; text-align: left;">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--border-color); background: rgba(0,0,0,0.02);">
+              <th style="padding: 8px;">ખામી વિગત (Issue)</th>
+              <th style="padding: 8px;">ફોર્મ (Form)</th>
+              <th style="padding: 8px; text-align: center;">આવૃત્તિ (Frequency)</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
       weeklySorted.forEach(([key, count]) => {
         const [fName, desc] = key.split(' | ');
         html += `
-          <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-left: 4px solid #f59e0b; border-radius: 6px; padding: 10px 12px; font-size: 0.85rem; display:flex; justify-content:space-between; align-items:center;">
-            <div>
-              <div style="font-weight: 600; color:var(--text-main); margin-bottom:2px;">${desc}</div>
-              <div style="font-size: 0.75rem; color:var(--text-muted);">${fName}</div>
-            </div>
-            <div style="background: rgba(245, 158, 11, 0.15); color: #b45309; font-weight: 800; padding: 4px 10px; border-radius: 20px; font-size:0.8rem;">
-              ${count} વાર (times)
-            </div>
-          </div>
+          <tr style="border-bottom: 1px solid var(--border-color);">
+            <td style="padding: 8px; font-weight: 600; color:var(--text-main);">${desc}</td>
+            <td style="padding: 8px; color:var(--text-muted);">${fName}</td>
+            <td style="padding: 8px; text-align: center;">
+              <span style="background: rgba(245, 158, 11, 0.15); color: #b45309; font-weight: 800; padding: 3px 8px; border-radius: 12px; font-size:0.75rem;">
+                ${count} વાર
+              </span>
+            </td>
+          </tr>
         `;
       });
-      html += '</div>';
+      html += '</tbody></table>';
       containerWeekly.innerHTML = html;
     }
   }
